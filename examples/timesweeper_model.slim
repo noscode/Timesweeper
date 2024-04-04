@@ -1,0 +1,217 @@
+initialize() {
+    defineConstant("subpopSize", 1000);
+    // physLen should be given in cmd
+    defineConstant("mutLoc", asInteger(physLen/2));
+
+    initializeMutationRate(1e-8);
+    initializeMutationType("m1", 0.5, "f", 0.0);
+    initializeGenomicElementType("g1", m1, 1.0);
+    initializeGenomicElement(g1, 0, physLen-1);
+    initializeRecombinationRate(1e-7);
+
+    // selCoeff should be given in cmd
+    initializeMutationType("m2", 0.5, "f", selCoeff); // introduced mutation
+
+    // startFreq should be given in cmd
+    // subpopSize shoulde be given in cmd
+
+    // define constants for times
+    defineConstant("burnTime", 20*subpopSize);
+    defineConstant("restartTime", burnTime-100);
+    defineConstant("mutTime", burnTime); // mutation gain fitness right after burnin
+    defineConstant("simEndTime", burnTime + 10 * sampGens[size(sampGens) - 1]);
+}
+
+s1 100 late() {
+    // save the state of the simulation
+    cat("SAVING TO " + dumpFile + " at generation " + community.tick + "\n");
+    sim.outputFull(dumpFile);
+    defineGlobal("establGen", -1);
+    if (sweep == "neut") {
+        defineGlobal("establGen", mutTime);
+    }
+}
+
+s2 200 late() {
+    // introduce the sweep mutation
+    if (sweep == "sdn")
+    {
+        target = sample(p1.genomes, 1);
+        cat("INTRODUCED MUTATION at gen " + community.tick + " with 2Ns = " + 2*subpopSize*selCoeff + "\n");
+        target.addNewDrawnMutation(m2, mutLoc);
+        defineGlobal("establGen", -1);
+    }
+
+    if (sweep == "ssv")
+    {
+        muts = sim.mutationsOfType(m1);
+        if (size(muts))
+        {
+            mut = NULL;
+            minDist = physLen+1;
+            for (m in muts)
+            {
+                dist = abs(m.position-mutLoc);
+                if (dist < minDist)
+                {
+                    minDist = dist;
+                    mut = m;
+                }
+            }
+            
+            cat("chosen mut:" + mut.id + "\n");
+            mut.setMutationType(m2);
+            mut.setSelectionCoeff(selCoeff);
+            cat("Chose polymorphism at position " + mut.position + " and frequency " + sim.mutationFrequencies(p1, mut) + " to become beneficial at generation " + community.tick + "\n\n");
+            defineGlobal("establGen", -1);
+        }
+        else
+        {
+            cat(simID + ": failed to switch from neutral to beneficial at gen " + sim.generation + "\n");
+            // Go back to generation saved before mutation
+            sim.readFromPopulationFile(dumpFile);
+
+            // Start a newly seeded run
+            setSeed(rdunif(1, 0, asInteger(2^32) - 1));
+            
+            cat("RESTARTING WITH SEED: " + getSeed() + "\n");
+
+        }
+    }
+
+}
+
+s3 300:400 late()
+{
+    if (sweep == "sdn" | (sweep == "ssv" & community.tick > mutTime)) {
+        cat(community.tick + ": lost check\n");
+        fixed = (sum(sim.substitutions.mutationType == m2) == 1);
+        if (fixed)
+        {
+            cat("Mutation FIXED at gen " + community.tick + "\n");
+            // we can no longer check
+            sim.deregisterScriptBlock(self);
+        }
+        else
+        {
+            muts = sim.mutationsOfType(m2);
+            if (size(muts) == 0)
+            {
+                cat("Mutation LOST at gen " + community.tick + "\n");
+
+                // Go back to generation saved before mutation
+                sim.readFromPopulationFile(dumpFile);
+
+                // Start a newly seeded run
+                setSeed(rdunif(1, 0, asInteger(2^32) - 1));
+                
+                cat("RESTARTING WITH SEED: " + getSeed() + "\n");
+            }
+        }
+    }
+}
+
+s4 400:500 late() {
+    if (community.tick > mutTime & (sweep == "sdn" | sweep == "ssv"))
+    {
+        cat(community.tick + ": establishment\n");
+        mut = sim.mutationsOfType(m2);
+        if (community.tick < simEndTime)
+        {
+            if (sim.mutationFrequencies(p1, mut)[0] > startFreq)
+            {
+                cat("Mutation frequency ESTABLISHED at gen " + community.tick + "\n");
+                defineGlobal("establGen", community.tick);
+                cat(establGen + "\n");
+                community.deregisterScriptBlock(self);
+            }
+        }
+        else
+        {
+            // we have to restart if we have reached the maximum time!
+            
+            cat("Have not reach desired ESTABLISHMENT before gen " + community.tick + "\n");
+
+            // Go back to generation saved before mutation
+            sim.readFromPopulationFile(dumpFile);
+
+            // Start a newly seeded run
+            setSeed(rdunif(1, 0, asInteger(2^32) - 1));
+                    
+            cat("RESTARTING WITH SEED: " + getSeed() + "\n");
+        }
+    }
+}
+
+s5 500:600 late()
+{
+    if (establGen > 0)
+    {
+        cat(community.tick + ": sampling " + establGen + "\n");
+
+        m1.convertToSubstitution = F;
+        m2.convertToSubstitution = F;
+
+        if (any(establGen + sampGens == community.tick))
+        {
+            if (sweep == "sdn" | sweep == "ssv")
+            {
+                // print info about segregation
+                muts = sim.mutationsOfType(m2);
+                if (size(muts) > 0)
+                {
+                    freq1 = sim.mutationFrequencies(p1, muts)[0];
+                    cat("SEGREGATING at " + freq1 + "\n");
+                }
+                else
+                {
+                    fixed = (sum(sim.substitutions.mutationType == m2) == 1);
+                    cat("NO LONGER SEGREGATING at generation " + community.tick + "; mut was " + ifelse(fixed, "FIXED\n", "LOST\n") + "\n");
+                }
+            }
+
+            // sample!
+            cat("Sampling at generation " + community.tick + "\n");
+            p1.outputVCFSample(sampleSizePerStep, replace=F, filePath=outFileVCF, append=T);
+            cat("Done emitting sample\n");
+
+            if (community.tick == establGen + sampGens[size(sampGens)-1])
+            {
+                cat("Deactivate all blocks\n");
+                p1.outputVCFSample(size(p1.individuals), replace=F, filePath=outFileVCF+".final", append=F);
+                cat("Finish simulation at tick " + community.tick + "\n");
+                sim.simulationFinished();
+            }
+        }
+    }
+}
+
+s6 15000 late()
+{
+    cat("Finish simulation at tick " + community.tick + "\n");
+    sim.simulationFinished();
+}
+
+
+1 early() {
+    // save this run's identifier, used to save and restore
+    defineConstant("simID", getSeed());
+
+    // set ip population size
+    sim.addSubpop("p1", subpopSize);
+
+    // schedule blocks
+    // set dump file
+    community.rescheduleScriptBlock(s1, start=restartTime, end=restartTime);
+    // introduce mutation
+    community.rescheduleScriptBlock(s2, start=mutTime, end=mutTime);
+    // Check that mutation is not lost
+    community.rescheduleScriptBlock(s3, start=mutTime, end=simEndTime);
+    // Reach the target frequency
+    community.rescheduleScriptBlock(s4, start=mutTime, end=simEndTime);
+    // Sampling
+    community.rescheduleScriptBlock(s5, start=mutTime, end=simEndTime);
+    // End
+    community.rescheduleScriptBlock(s6, start=simEndTime, end=simEndTime);
+}
+

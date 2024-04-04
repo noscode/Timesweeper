@@ -1,13 +1,17 @@
 #General
-work dir: example_run
-slimfile: example_model.slim 
+work dir: data
+slimfile: timesweeper_model.slim 
 
 scenarios: ["neut", "sdn", "ssv"]
 mut types: [2]
-sample sizes: [10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10]
+num_sample_points: 10
+sample sizes: [100, 100, 100, 100, 100, 100, 100, 100, 100, 100]
+inds_per_tp: 100
 ploidy: 2
 win_size: 51
+physLen: 1000000
+
 
 #Simulation
-reps: 1000
+reps: 20
 slim path: slim

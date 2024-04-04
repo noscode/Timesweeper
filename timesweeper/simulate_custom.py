@@ -21,7 +21,7 @@ def read_config(yaml_file):
 
 
 # Simulation
-def randomize_selCoeff_uni(lower_bound=0.00025, upper_bound=0.25):
+def randomize_selCoeff_uni(lower_bound=0.001, upper_bound=0.2):
     """Draws selection coefficient from log uniform dist to vary selection strength."""
     rng = np.random.default_rng(
         np.random.seed(int.from_bytes(os.urandom(4), byteorder="little"))
@@ -30,19 +30,26 @@ def randomize_selCoeff_uni(lower_bound=0.00025, upper_bound=0.25):
     return rng.uniform(lower_bound, upper_bound, 1)[0]
 
 
-def randomize_sampGens(num_timepoints, dev=50, span=200):
+def randomize_sampGens(num_timepoints, dev=50, span=100):
     rng = np.random.default_rng(
         np.random.seed(int.from_bytes(os.urandom(4), byteorder="little"))
     )
-    start = round(rng.uniform(-dev, dev, 1)[0])
+    start = 0
     if num_timepoints == 1:
         sampGens = [start + span]
     else:
+        dist = span // num_timepoints
         sampGens = [
-            round(i) for i in np.linspace(start, start + span + 1, num_timepoints)
+            start + i * dist for i in range(num_timepoints)
         ]
 
     return sampGens
+
+def randomize_startFreq(lower_bound=0.1, upper_bound=0.6):
+    rng = np.random.default_rng(
+        np.random.seed(int.from_bytes(os.urandom(4), byteorder="little"))
+    )
+    return rng.uniform(lower_bound, upper_bound, 1)[0]
 
 
 def make_d_block(
@@ -65,6 +72,7 @@ def make_d_block(
     if num_sample_points == 1:
         randomize_sampGens(num_sample_points)
     sampGens = [str(i) for i in randomize_sampGens(num_sample_points)]
+    startFreq = randomize_startFreq()
 
     d_block = f"""\
     -d "sweep='{sweep}'" \
@@ -72,6 +80,7 @@ def make_d_block(
     -d "outFileMS='{outFileMS}'" \
     -d "dumpFile='{dumpfile}'" \
     -d selCoeff={selCoeff} \
+    -d startFreq={startFreq} \
     -d sampGens='c({','.join(sampGens)})' \
     -d numSamples={num_sample_points} \
     -d sampleSizePerStep={inds_per_tp} \

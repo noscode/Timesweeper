@@ -116,7 +116,7 @@ s4 400:500 late() {
     {
         cat(community.tick + ": establishment\n");
         mut = sim.mutationsOfType(m2);
-        if (community.tick < simEndTime)
+        if (community.tick < simEndTime - 1)
         {
             if (sim.mutationFrequencies(p1, mut)[0] > startFreq)
             {
@@ -186,12 +186,6 @@ s5 500:600 late()
     }
 }
 
-s6 15000 late()
-{
-    cat("Finish simulation at tick " + community.tick + "\n");
-    sim.simulationFinished();
-}
-
 
 1 early() {
     // save this run's identifier, used to save and restore
@@ -211,7 +205,5 @@ s6 15000 late()
     community.rescheduleScriptBlock(s4, start=mutTime, end=simEndTime);
     // Sampling
     community.rescheduleScriptBlock(s5, start=mutTime, end=simEndTime);
-    // End
-    community.rescheduleScriptBlock(s6, start=simEndTime, end=simEndTime);
 }
 
